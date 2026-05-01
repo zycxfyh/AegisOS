@@ -30,11 +30,12 @@ SCRIPTS = ROOT / "scripts"
 @dataclass
 class GateResult:
     name: str
-    gate_class: str  # "hard" | "escalation" | "advisory"
+    gate_class: str
     layer: str
     passed: bool
-    output: str = ""
-    exit_code: int = -1
+    output: str  # combined stdout+stderr (for display)
+    stdout: str  # stdout only (for JSON parsing)
+    exit_code: int
 
 
 @dataclass
@@ -69,15 +70,15 @@ def _run_gate(name: str, gate_class: str, layer: str, cmd: list[str], **kwargs) 
             cwd=str(ROOT),
             **kwargs,
         )
+        # Only stdout carries structured output; stderr is diagnostics
         output = (result.stdout + result.stderr).strip()
+        stdout = result.stdout.strip()
         exit_code = result.returncode
 
         # For "hard" gates, pass means exit 0
         if gate_class == "hard":
             passed = exit_code == 0
         else:
-            # Escalation/advisory: always "passed" for blocking purposes
-            # but record the actual result
             passed = True
 
         return GateResult(
@@ -86,6 +87,7 @@ def _run_gate(name: str, gate_class: str, layer: str, cmd: list[str], **kwargs) 
             layer=layer,
             passed=passed,
             output=output[:500],
+            stdout=stdout[:500],
             exit_code=exit_code,
         )
     except subprocess.TimeoutExpired:
@@ -95,6 +97,8 @@ def _run_gate(name: str, gate_class: str, layer: str, cmd: list[str], **kwargs) 
             layer=layer,
             passed=False,
             output="TIMEOUT",
+            stdout="",
+            exit_code=-1,
         )
     except Exception as exc:
         return GateResult(
@@ -103,6 +107,8 @@ def _run_gate(name: str, gate_class: str, layer: str, cmd: list[str], **kwargs) 
             layer=layer,
             passed=False,
             output=str(exc),
+            stdout="",
+            exit_code=-1,
         )
 
 
@@ -115,6 +121,10 @@ def run_all_gates() -> BaselineSummary:
     # Only check this Wave's files, not pre-existing debt across the whole project
     wave_files = [
         str(SCRIPTS / "run_verification_baseline.py"),
+        str(SCRIPTS / "check_document_registry.py"),
+        str(SCRIPTS / "check_verification_debt.py"),
+        str(SCRIPTS / "check_receipt_integrity.py"),
+        str(SCRIPTS / "check_verification_manifest.py"),
         str(SCRIPTS / "audit_runtime_evidence_db.py"),
         str(ROOT / "tests" / "unit" / "test_verification_baseline.py"),
         str(ROOT / "tests" / "unit" / "test_repo_governance_cli.py"),
@@ -202,7 +212,7 @@ def run_all_gates() -> BaselineSummary:
     )
     # Also verify the JSON output contains expected fields
     try:
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.stdout)
         if parsed.get("decision") != "execute":
             result.passed = False
             result.output += " [unexpected decision: " + parsed.get("decision", "?") + "]"
@@ -211,7 +221,7 @@ def run_all_gates() -> BaselineSummary:
             result.output += " [side_effects violation]"
     except json.JSONDecodeError:
         result.passed = False
-        result.output = "JSON parse failed: " + result.output[:200]
+        result.output = "JSON parse failed: " + result.stdout[:200]
     summary.results.append(result)
 
     # Forbidden case → reject
@@ -237,7 +247,7 @@ def run_all_gates() -> BaselineSummary:
     )
     # Forbidden case: exit_code 3 = reject (expected), exit_code 0 = execute (unexpected)
     try:
-        parsed = json.loads(fb_result.output)
+        parsed = json.loads(fb_result.stdout)
         if parsed.get("decision") != "reject":
             fb_result.passed = False
             fb_result.output += " [expected reject, got " + parsed.get("decision", "?") + "]"
@@ -245,7 +255,7 @@ def run_all_gates() -> BaselineSummary:
             fb_result.passed = True  # reject is the correct outcome
     except json.JSONDecodeError:
         fb_result.passed = False
-        fb_result.output = "JSON parse failed: " + fb_result.output[:200]
+        fb_result.output = "JSON parse failed: " + fb_result.stdout[:200]
     summary.results.append(fb_result)
 
     # ── Layer 1-3: Test Suites ──────────────────────────────
@@ -347,6 +357,10 @@ def run_pr_fast_gates() -> BaselineSummary:
     # ── Layer 0: Static Analysis ─────────────────────────────
     wave_files = [
         str(SCRIPTS / "run_verification_baseline.py"),
+        str(SCRIPTS / "check_document_registry.py"),
+        str(SCRIPTS / "check_verification_debt.py"),
+        str(SCRIPTS / "check_receipt_integrity.py"),
+        str(SCRIPTS / "check_verification_manifest.py"),
         str(SCRIPTS / "audit_runtime_evidence_db.py"),
         str(ROOT / "tests" / "unit" / "test_verification_baseline.py"),
         str(ROOT / "tests" / "unit" / "test_repo_governance_cli.py"),
@@ -390,6 +404,46 @@ def run_pr_fast_gates() -> BaselineSummary:
         )
     )
 
+    # ── Layer 6: Document Registry Governance ────────────────
+    summary.results.append(
+        _run_gate(
+            "Document registry governance",
+            "hard",
+            "L6",
+            [python, str(SCRIPTS / "check_document_registry.py")],
+        )
+    )
+
+    # ── Layer 7: Verification Debt Ledger ────────────────────
+    summary.results.append(
+        _run_gate(
+            "Verification debt ledger",
+            "hard",
+            "L7A",
+            [python, str(SCRIPTS / "check_verification_debt.py")],
+        )
+    )
+
+    # ── Layer 7: Receipt Integrity ───────────────────────────
+    summary.results.append(
+        _run_gate(
+            "Receipt integrity",
+            "hard",
+            "L7B",
+            [python, str(SCRIPTS / "check_receipt_integrity.py")],
+        )
+    )
+
+    # ── Layer 8: Verification Gate Manifest ──────────────────
+    summary.results.append(
+        _run_gate(
+            "Verification gate manifest",
+            "hard",
+            "L8",
+            [python, str(SCRIPTS / "check_verification_manifest.py")],
+        )
+    )
+
     # ── Layer 7: Eval Corpus ────────────────────────────────
     summary.results.append(
         _run_gate(
@@ -423,13 +477,13 @@ def run_pr_fast_gates() -> BaselineSummary:
         ],
     )
     try:
-        parsed = json.loads(result.output)
+        parsed = json.loads(result.stdout)
         if parsed.get("decision") != "execute":
             result.passed = False
             result.output += " [unexpected decision: " + parsed.get("decision", "?") + "]"
     except json.JSONDecodeError:
         result.passed = False
-        result.output = "JSON parse failed: " + result.output[:200]
+        result.output = "JSON parse failed: " + result.stdout[:200]
     summary.results.append(result)
 
     fb_result = _run_gate(
@@ -453,7 +507,7 @@ def run_pr_fast_gates() -> BaselineSummary:
         ],
     )
     try:
-        parsed = json.loads(fb_result.output)
+        parsed = json.loads(fb_result.stdout)
         if parsed.get("decision") != "reject":
             fb_result.passed = False
             fb_result.output += " [expected reject, got " + parsed.get("decision", "?") + "]"
@@ -461,7 +515,7 @@ def run_pr_fast_gates() -> BaselineSummary:
             fb_result.passed = True
     except json.JSONDecodeError:
         fb_result.passed = False
-        fb_result.output = "JSON parse failed: " + fb_result.output[:200]
+        fb_result.output = "JSON parse failed: " + fb_result.stdout[:200]
     summary.results.append(fb_result)
 
     return summary
