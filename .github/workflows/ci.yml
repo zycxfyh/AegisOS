@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv run ruff check src/ scripts/ tests/ state/
       - run: uv run ruff format --check --preview src/ scripts/ tests/ state/
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - name: Document registry consistency
         run: uv run python scripts/check_document_registry.py
@@ -75,7 +75,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@v4
-  #     - uses: astral-sh/setup-uv@v5
+  #     - uses: astral-sh/setup-uv@v7
   #     - run: uv sync --extra dev
   #     - name: NATS + Temporal integration tests
   #       run: uv run python tests/test_nats_integration.py
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - name: Verify migration dry-run
         run: uv run python scripts/migrate_governance_to_pg.py --dry-run
