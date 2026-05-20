@@ -30,7 +30,7 @@ jobs:
     env:
       ORDIVON_TEST_DATABASE_URL: postgresql://ordivon:ordivon@localhost:5432/ordivon
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --features postgres-integration,policy-http --all-targets -- -D warnings
@@ -48,7 +48,7 @@ jobs:
   ruff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --extra dev
       - run: uv run ruff check src/ scripts/ tests/ state/
@@ -58,7 +58,7 @@ jobs:
   governance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --extra dev
       - name: Document registry consistency
@@ -74,7 +74,7 @@ jobs:
   # infra-tests:
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v6
   #     - uses: astral-sh/setup-uv@v5
   #     - run: uv sync --extra dev
   #     - name: NATS + Temporal integration tests
@@ -86,7 +86,7 @@ jobs:
   db-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --extra dev
       - name: Verify migration dry-run
